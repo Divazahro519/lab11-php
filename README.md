@@ -1,177 +1,341 @@
-# Praktikum 11: PHP OOP Lanjutan - Modular Framework & Routing
+# Praktikum 12: Autentikasi dan Session 
 
-## Tujuan Praktikum
-- Memahami konsep dasar Framework Modular
-- Memahami konsep dasar routing pada PHP
-- Mampu membuat Framework sederhana menggunakan PHP OOP
+## Tujuan Praktikum 
+1. Mahasiswa mampu memahami konsep dasar Autnetikasi. 
+2. Mahasiswa mampu memahami konsep dasar Session. 
+3. Mahasaswa mampu mengimplementasikan Autentikasi sederhana. 
 
 ## Struktur Project
 ```
-lab11_php_oop/ 
-├── .htaccess           (Konfigurasi URL Rewrite) 
-├── config.php          (Konfigurasi Database) 
-├── index.php           (Gerbang Utama / Routing) 
-├── class/              (Tempat menyimpan Library) 
-│   ├── Database.php 
-│   └── Form.php 
-├── module/             (Tempat modul-modul website) 
-│   └── artikel/ 
-│       ├── index.php   (Menampilkan data) 
-│       ├── tambah.php  (Form tambah) 
-│       └── ubah.php 
-├── template/           (Bagian layout) 
-├── header.php 
-├── footer.php 
-└── sidebar.php         
+   lab11_php_oop/
+├── index.php              # Main router dan controller
+├── config.php             # Konfigurasi database dan base URL
+├── .htaccess              # URL rewriting (opsional)
+├── class/
+│   ├── Database.php       # Class untuk koneksi database
+│   └── Form.php           # Class untuk form handling
+├── module/
+│   ├── home/
+│   │   └── index.php      # Halaman home
+│   ├── user/
+│   │   ├── login.php      # Halaman login
+│   │   ├── logout.php     # Proses logout
+│   │   └── profile.php    # Halaman profil user
+│   └── artikel/
+│       ├── index.php      # Daftar artikel (READ)
+│       ├── tambah.php     # Form tambah artikel (CREATE)
+│       ├── edit.php       # Form edit artikel (UPDATE)
+│       └── hapus.php      # Konfirmasi hapus (DELETE)
+├── template/
+│   ├── header.php         # Header template dengan navigation
+│   └── footer.php         # Footer template
+└── README.md              # Dokumentasi ini     
 ```
 
-## Penjelasan Kode Utama
+## Implementasi Kode
 
-### 1. File (`.htaccess`)
-```
-<IfModule mod_rewrite.c>
-    RewriteEngine On
-    RewriteBase /lab11_php_oop/
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteRule ^(.*)$ index.php/$1 [L]
-</IfModule>
-```
-### Fungsi:
-- Mengaktifkan URL rewriting
-- Mengarahkan semua request ke index.php (kecuali file/folder yang benar-benar ada)
-- Memungkinkan URL bersih seperti /artikel/tambah tanpa .php
-
-### 2. File (`config.php`)
+### 1. Sistem Routing (`index.php`)
 ```php
 <?php
-$config = [
-    'host' => 'localhost',
-    'username' => 'root',
-    'password' => '',
-    'db_name' => 'lathhan_oop'
-];
-?>
-```
-### Fungsi:
-- Menyimpan konfigurasi koneksi database
-- Memudahkan perubahan setting database di satu tempat
+session_start();
 
-### 3. File (`index.php (Router)`)
-```php
-<?php
 include "config.php";
+
+if (!defined('BASE_URL')) {
+    define('BASE_URL', 'http://localhost/lab11_php_oop');
+}
+
 include "class/Database.php";
 include "class/Form.php";
 
-session_start();
+$request_uri = $_SERVER['REQUEST_URI'] ?? '/home/index';
 
-$path = isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : '/home/index';
+$request_uri = strtok($request_uri, '?');
+
+$base_path = parse_url(BASE_URL, PHP_URL_PATH) ?? '';
+if ($base_path && strpos($request_uri, $base_path) === 0) {
+    $request_uri = substr($request_uri, strlen($base_path));
+}
+
+if (isset($_SERVER['PATH_INFO']) && !empty($_SERVER['PATH_INFO'])) {
+    $path = $_SERVER['PATH_INFO'];
+} else {
+    $path = $request_uri;
+}
+
+if (empty($path) || $path == '/') {
+    $path = '/home/index';
+}
+
 $segments = explode('/', trim($path, '/'));
+$mod = $segments[0] ?? 'home';
+$page = $segments[1] ?? 'index';
 
-$mod = isset($segments[0]) ? $segments[0] : 'home';
-$page = isset($segments[1]) ? $segments[1] : 'index';
+$params = array_slice($segments, 2);
+
+$public_pages = ['home', 'user'];
+
+if (!in_array($mod, $public_pages)) {
+    if (!isset($_SESSION['is_login'])) {
+        header('Location: ' . BASE_URL . '/user/login');
+        exit();
+    }
+}
 
 $file = "module/{$mod}/{$page}.php";
 
-include "template/header.php";
-
 if (file_exists($file)) {
-    include $file;
+    if ($mod == 'user' && $page == 'login') {
+        include $file;
+    } else {
+        include "template/header.php";
+        include $file;
+        include "template/footer.php";
+    }
 } else {
-    echo '<div class="alert alert-danger">Modul tidak ditemukan...</div>';
+    echo "<div class='container mt-5'>";
+    echo "<div class='alert alert-danger'>";
+    echo "<h4>Error: Halaman tidak ditemukan</h4>";
+    echo "<p>File <strong>{$file}</strong> tidak ditemukan.</p>";
+    echo "<p>Path: {$path}</p>";
+    echo "<p>Segments: " . implode(', ', $segments) . "</p>";
+    echo "<p>Params: " . implode(', ', $params) . "</p>";
+    echo "<p><a href='" . BASE_URL . "/home/index' class='btn btn-primary'>Kembali ke Home</a></p>";
+    echo "</div>";
+    echo "</div>";
 }
-
-include "template/footer.php";
-?>
-```
-### Penjelasan Routing:
-1. $_SERVER['PATH_INFO'] menangkap path setelah index.php/
-2. Contoh URL: localhost/lab11_php_oop/artikel/tambah
-- Path: /artikel/tambah
-- Modul: artikel
-- Page: tambah
-3. Router akan mencari file: module/artikel/tambah.php
-
-### 4. Class ('form.php')
-```php
-class Form
-{
-    private $fields = array();
-    private $action;
-    private $submit = "Submit Form";
-    private $jumField = 0;
-
-    public function __construct($action, $submit) { ... }
-    
-    public function displayForm() { ... }
-    
-    public function addField($name, $label, $type = "text", $options = array()) { ... }
-}
-```
-### Fitur:
-- Membuat form dinamis dengan berbagai tipe input (text, textarea, select, radio, checkbox)
-- Metode addField() untuk menambah field form
-- Metode displayForm() untuk menampilkan form HTML
-
-### 5. Class (`database.php`)
-```php
-class Database
-{
-    protected $conn;
-
-    public function __construct() { ... }  // Koneksi database
-    public function query($sql) { ... }    // Eksekusi query
-    public function get($table, $where = null) { ... }  // Ambil satu data
-    public function insert($table, $data) { ... }       // Insert data
-    public function update($table, $data, $where) { ... } // Update data
-}
-```
-### Motode CRUD:
-- get(): SELECT data dengan kondisi WHERE
-- insert(): INSERT data ke tabel
-- update(): UPDATE data dengan kondisi WHERE
-
-### 6. Module ('artikel/index.php')
-```php
-<?php
-$db = new Database();
-$artikel = $db->query("SELECT * FROM artikel");
 ?>
 ```
 ### Fungsi:
-- Mengambil semua data artikel dari database
-- Menampilkan dalam tabel HTML
+- Menangani routing URL dan proteksi halaman
 
-### 7. Modul ('artikel/tambah.php')
+### 2. Autentikasi (`modeule/user/login.php`)
 ```php
 <?php
-$db = new Database();
-$form = new Form("", "Simpan");
+// Cek jika sudah login, langsung ke home
+if (isset($_SESSION['is_login'])) {
+    header('Location: ' . BASE_URL . '/home/index');
+    exit;
+}
 
-if ($_POST) {
-    $data = ['judul' => $_POST['judul'], 'isi' => $_POST['isi']];
-    $db->insert('artikel', $data);
+$message = "";
+// Logika Proses Login
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $db = new Database();
+    
+    // Ambil input dan sanitasi
+    $username = trim($_POST['username']);
+    $password = $_POST['password'];
+    
+    // Debug: Tampilkan input (hapus setelah testing)
+    // echo "Username: $username<br>";
+    // echo "Password: $password<br>";
+    
+    // Escape untuk keamanan
+    $escaped_username = $db->escape($username);
+    
+    // Query cari user berdasarkan username
+    $sql = "SELECT * FROM users WHERE username = '$escaped_username' LIMIT 1";
+    // echo "SQL: $sql<br>"; // Debug
+    
+    $result = $db->query($sql);
+    
+    if ($result && $result->num_rows > 0) {
+        $data = $result->fetch_assoc();
+        
+        // Debug: Tampilkan data user
+        // echo "Data user: ";
+        // print_r($data);
+        // echo "<br>Password hash di DB: " . $data['password'] . "<br>";
+        
+        // Verifikasi password
+        if (password_verify($password, $data['password'])) {
+            // Login Sukses: Set Session
+            $_SESSION['is_login'] = true;
+            $_SESSION['username'] = $data['username'];
+            $_SESSION['nama'] = $data['nama'];
+            $_SESSION['user_id'] = $data['id'];
+            
+            // Debug
+            // echo "Password verified!<br>";
+            
+            // Redirect ke halaman admin/artikel
+            header('Location: ' . BASE_URL . '/artikel/index');
+            exit;
+        } else {
+            $message = "Password salah!";
+            // Debug
+            // echo "Password verification failed!<br>";
+        }
+    } else {
+        $message = "Username tidak ditemukan!";
+        // Debug
+        // echo "User not found!<br>";
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .login-container { 
+            max-width: 400px; 
+            margin: 100px auto; 
+            padding: 20px; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.1); 
+            border-radius: 8px; 
+        }
+        .debug-info {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="login-container">
+            <h3 class="text-center mb-4">Login User</h3>
+            
+            <?php 
+            // Debug: Tampilkan info
+            if (isset($_GET['debug'])) {
+                echo '<div class="debug-info">';
+                echo 'BASE_URL: ' . BASE_URL . '<br>';
+                echo 'Session status: ' . (session_status() === PHP_SESSION_ACTIVE ? 'Active' : 'Inactive');
+                echo '</div>';
+            }
+            ?>
+            
+            <?php if ($message): ?>
+                <div class="alert alert-danger">
+                    <strong>Error!</strong> <?php echo $message; ?>
+                    <?php if (isset($_GET['debug'])): ?>
+                        <br><small>Cek database dan hash password</small>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+            
+            <form method="POST" action="">
+                <div class="mb-3">
+                    <label class="form-label">Username</label>
+                    <input type="text" name="username" class="form-control" required 
+                           value="<?php echo isset($_POST['username']) ? htmlspecialchars($_POST['username']) : ''; ?>">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Password</label>
+                    <input type="password" name="password" class="form-control" required>
+                </div>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary">Login</button>
+                </div>
+            </form>
+            
+            <div class="mt-3 text-center">
+                <a href="<?php echo BASE_URL; ?>/home/index">Kembali ke Home</a> |
+                <a href="<?php echo BASE_URL; ?>/user/login?debug=1">Debug Mode</a> |
+                <a href="<?php echo BASE_URL; ?>/reset_password.php">Reset Password</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+```
+### Fungsi:
+- validasi user dan membuat session
+
+### 3. Database Class (`class/database.php`)
+```php
+<?php
+class Database {
+    private $conn;
+    
+    public function __construct() {
+        // Gunakan konstanta yang sudah didefinisikan di config.php
+        $host = defined('DB_HOST') ? DB_HOST : 'localhost';
+        $user = defined('DB_USER') ? DB_USER : 'root';
+        $pass = defined('DB_PASS') ? DB_PASS : '';
+        $dbname = defined('DB_NAME') ? DB_NAME : 'latihan_oop';
+        
+        // Buat koneksi
+        $this->conn = new mysqli($host, $user, $pass, $dbname);
+        
+        // Cek koneksi
+        if ($this->conn->connect_error) {
+            die("Koneksi gagal: " . $this->conn->connect_error);
+        }
+    }
+    
+    public function query($sql) {
+        return $this->conn->query($sql);
+    }
+    
+    public function escape($string) {
+        return $this->conn->real_escape_string($string);
+    }
+    
+    public function getConnection() {
+        return $this->conn;
+    }
+    
+    public function __destruct() {
+        if ($this->conn) {
+            $this->conn->close();
+        }
+    }
 }
 ?>
 ```
-### Flow:
-1. Buat objek Form dan Database
-2. Jika form disubmit ($_POST), proses penyimpanan
-3. Tampilkan form untuk input data
+### CRUD Operations (module/artikel/)
+1. index.php - Menampilkan daftar artikel
+2. tambah.php - Form untuk menambah artikel baru
+3. edit.php - Form untuk mengedit artikel
+4. hapus.php - Konfirmasi dan proses hapus artikel
+
+### session Management
+- Login: Membuat session variables
+- Logout: Menghapus semua session dengan session_destroy()
+- Proteksi: Mengecek $_SESSION['is_login'] sebelum akses halaman terproteksi
 
 ## Screenshot Implementasi
-1. index.php
-<img src="docs/index.png" width="450">
+1. Halaman Login
+<img src="docs/login.png" width="450">
+From login dengan validasi username dan password
 
-2. tambah
+2. Daftar Artikel
+<img src="docs/artikel.png" width="450">
+Tampilan tabel artikel dengan aksi edit dan hapus 
+
+3. Form Tambah Artikel
 <img src="docs/tambah.png" width="450">
+Form untuk menambahkan artikel baru
 
-3. Halaman daftar Artikel
-<img src="docs/daftar.png" width="450">
+4. Form Edit Artikel
+<img src="docs/edit.png" width="450">
+Form untuk mengedit artikel yang sudah ada
+
+5. Halaman Profil
+<img src="docs/profil.png" width="450">
+Halaman profil dengan fitur ganti password
 
 ## Akses:
-http://localhost/lab11_php_oop/artikel/index
+http://localhost/lab11_php_oop/user/login
+
 
 ## Kesimpulan
-Framework modular ini menunjukkan bagaimana aplikasi web dapat diorganisir dengan baik menggunakan PHP OOP. Dengan struktur yang terorganisir, pengembangan menjadi lebih mudah, maintenance lebih sederhana, dan fitur baru dapat ditambahkan tanpa mengganggu kode yang sudah ada.
+Praktikum ini berhasil mengimplementasikan:
+
+1. Sistem autentikasi dengan session management
+2. Proteksi halaman berdasarkan status login
+3. CRUD operations untuk manajemen artikel
+4. Password security dengan hashing
+5. Modular architecture dengan routing dinamis
+6. Responsive UI dengan Bootstrap 5
+7. Error handling dan user feedback
+8. Security best practices
